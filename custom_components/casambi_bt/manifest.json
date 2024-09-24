@@ -14,6 +14,6 @@
   "documentation": "https://github.com/rankjie/casambi-bt-hass",
   "integration_type": "hub",
   "iot_class": "local_push",
-  "requirements": ["git+https://github.com/rankjie/casambi-bt@master"],
+  "requirements": ["git+https://github.com/rankjie/casambi-bt@master#casambi-bt=0.2.2"],
   "version": "0.1.3"
 }
