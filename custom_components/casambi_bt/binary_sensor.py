@@ -54,6 +54,16 @@ async def async_setup_entry(
     else:
         _LOGGER.debug("No binary sensor entities available.")
 
+    # Sensor Platform V4: rain (precipitation) and PIR (motion) binary sensors
+    from .environment_sensor import async_setup_entry_binary_sensors  # noqa: I001, PLC0415
+
+    await async_setup_entry_binary_sensors(hass, config_entry, async_add_entities)
+
+    # DALI-2 Sensor{Presence,Daylight}: presence binary sensor
+    from .dali2_sensor import async_setup_entry_dali2_binary_sensors  # noqa: PLC0415
+
+    await async_setup_entry_dali2_binary_sensors(hass, config_entry, async_add_entities)
+
 
 class CasambiBinarySensorEntity(BinarySensorEntity, CasambiNetworkEntity):
     """Defines a Casambi Binary Sensor Entity."""
