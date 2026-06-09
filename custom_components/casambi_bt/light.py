@@ -7,7 +7,7 @@ from copy import copy
 import logging
 from typing import Any, Final, cast
 
-from CasambiBt import ColorSource, Group, Unit, UnitControlType, UnitState, _operation
+from CasambiBt import ColorSource, Group, Unit, UnitControlType, UnitState
 from CasambiBt.errors import ProtocolError
 
 from homeassistant.components.light import (
@@ -54,6 +54,16 @@ def _is_cover_unit(unit: Unit) -> bool:
     return unit.unitType.mode.startswith("EXT/") and UnitControlType.DIMMER in controls
 
 
+def _is_sensor_platform_unit(unit: Unit) -> bool:
+    """Return True if the unit should be treated as a sensor platform."""
+    controls = {c.type for c in unit.unitType.controls}
+    return (
+        unit.unitType.mode.startswith("EXT/")
+        and UnitControlType.SENSOR in controls
+        and UnitControlType.DIMMER not in controls
+    )
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -62,12 +72,12 @@ async def async_setup_entry(
     """Create the Casambi light entities."""
     casa_api: CasambiApi = hass.data[DOMAIN][config_entry.entry_id]
 
-    # Exclude all EXT/ mode units (covers AND sensors like Sensor Platform V4)
-    # EXT/ units are externally driven actuators or sensors, never true lights.
+    # Exclude only known non-light EXT/ units. Some relay lights, such as
+    # LIGA.AIR.REL.240, are EXT/Elements ONOFF units and must stay as lights.
     light_entities: list[CasambiLight] = [
         CasambiLightUnit(casa_api, u)
         for u in casa_api.get_units(CASA_LIGHT_CTRL_TYPES)
-        if not u.unitType.mode.startswith("EXT/")
+        if not _is_cover_unit(u) and not _is_sensor_platform_unit(u)
     ]
 
     group_entities: list[CasambiLight] = []
@@ -158,6 +168,14 @@ class CasambiLightUnit(CasambiLight, CasambiUnitEntity):
         super().__init__(api, desc, unit)
 
     @property
+    def available(self) -> bool:
+        """Return True if the unit light is available."""
+        unit = cast("Unit", self._obj)
+        if self.color_mode == ColorMode.ONOFF:
+            return self._api.available
+        return self._api.available and (unit.online or self._api.is_classic_network)
+
+    @property
     def is_on(self) -> bool:
         """Return True if the unit is on."""
         return self._obj.is_on
@@ -209,6 +227,10 @@ class CasambiLightUnit(CasambiLight, CasambiUnitEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the unit."""
         unit = cast("Unit", self._obj)
+        if self.color_mode == ColorMode.ONOFF:
+            await self._async_set_onoff_state(True)
+            return
+
         was_on_before = self.is_on
         state = copy(unit.state)
         if not state:
@@ -344,23 +366,34 @@ class CasambiLightUnit(CasambiLight, CasambiUnitEntity):
 
         await self._api.casa.turnOn(self._obj)
 
+    async def _async_set_onoff_state(self, on: bool) -> None:
+        """Set an ONOFF-only unit through state bytes on EVO networks."""
+        unit = cast("Unit", self._obj)
+        if self._api.is_classic_network:
+            if on:
+                await self._api.casa.turnOn(unit)
+            else:
+                await self._api.casa.setLevel(unit, 0)
+            return
+
+        state = UnitState()
+        state.onoff = on
+        try:
+            await self._api.casa.setUnitState(unit, state)
+        except ProtocolError as err:
+            if "Classic networks" not in str(err):
+                raise
+            if on:
+                await self._api.casa.turnOn(unit)
+            else:
+                await self._api.casa.setLevel(unit, 0)
+
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the unit."""
         # HACK: Some ONOFF-only lights don't respond to SetLevel on EVO, so use SetState.
         # Classic networks don't support INVOCATION (SetState), so use SetLevel directly.
         if self.color_mode == ColorMode.ONOFF:
-            if self._api.is_classic_network:
-                await self._api.casa.setLevel(cast("Unit", self._obj), 0)
-            else:
-                unit = cast("Unit", self._obj)
-                try:
-                    await self._api.casa._send(  # noqa: SLF001
-                        unit, bytes(unit.unitType.stateLength), _operation.OpCode.SetState
-                    )
-                except ProtocolError as err:
-                    if "Classic networks" not in str(err):
-                        raise
-                    await self._api.casa.setLevel(unit, 0)
+            await self._async_set_onoff_state(False)
         else:
             await super().async_turn_off(**kwargs)
 
