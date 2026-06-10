@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import CasambiApi
 from .const import DOMAIN
+from .switch_detection import is_switch_unit as _is_switch_unit
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,33 +33,6 @@ BUTTON_ACTIONS: Final[dict[int, str]] = {
     8: "Scene List",
     9: "All Units",
 }
-
-
-def _is_switch_unit(unit: Unit) -> bool:
-    """Check if a unit is a switch based on its mode, model or manufacturer."""
-    # Mode-based detection takes priority (most reliable)
-    mode = unit.unitType.mode
-    if "Kinetic" in mode:
-        return True  # EnOcean kinetic switch (e.g. PTM215B)
-    if mode == "Sensor":
-        return False  # BT repeater, not a switch
-
-    # Check model name
-    model_lower = unit.unitType.model.lower()
-    switch_keywords = {
-        "switch", "xpress", "button", "pushbutton",
-        "batteryswitch", "wall switch", "remote"
-    }
-    if any(keyword in model_lower for keyword in switch_keywords):
-        return True
-
-    # Check manufacturer
-    manufacturer_lower = unit.unitType.manufacturer.lower()
-    if "switch" in manufacturer_lower:
-        return True
-
-    return False
-
 
 def _get_unit_data(raw_network_data: dict | None, unit_id: int) -> dict | None:
     """Get the complete unit data from network data."""
