@@ -102,6 +102,7 @@ def _write_bits(raw: bytearray, offset: int, length: int, value: int) -> None:
 async def _send_raw_state(api: CasambiApi, unit: Unit, raw: bytearray) -> None:
     """Send a full raw-state packet to the unit (bypasses UnitState abstraction)."""
     from CasambiBt._operation import OpCode  # private but stable across dev versions
+    await api.ensure_connected()
     await api.casa._send(unit, bytes(raw), OpCode.SetState)
 
 

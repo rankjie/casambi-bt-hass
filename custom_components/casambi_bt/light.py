@@ -147,6 +147,7 @@ class CasambiLight(CasambiEntity, LightEntity, metaclass=ABCMeta):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the entity of."""
+        await self._api.ensure_connected()
         await self._api.casa.setLevel(self._obj, 0)
 
 
@@ -172,8 +173,10 @@ class CasambiLightUnit(CasambiLight, CasambiUnitEntity):
         """Return True if the unit light is available."""
         unit = cast("Unit", self._obj)
         if self.color_mode == ColorMode.ONOFF:
-            return self._api.available
-        return self._api.available and (unit.online or self._api.is_classic_network)
+            return self._api.assumed_available
+        return self._api.assumed_available and (
+            unit.online or self._api.is_classic_network
+        )
 
     @property
     def is_on(self) -> bool:
@@ -226,6 +229,7 @@ class CasambiLightUnit(CasambiLight, CasambiUnitEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the unit."""
+        await self._api.ensure_connected()
         unit = cast("Unit", self._obj)
         if self.color_mode == ColorMode.ONOFF:
             await self._async_set_onoff_state(True)
@@ -368,6 +372,7 @@ class CasambiLightUnit(CasambiLight, CasambiUnitEntity):
 
     async def _async_set_onoff_state(self, on: bool) -> None:
         """Set an ONOFF-only unit through state bytes on EVO networks."""
+        await self._api.ensure_connected()
         unit = cast("Unit", self._obj)
         if self._api.is_classic_network:
             if on:
@@ -487,6 +492,7 @@ class CasambiLightGroup(CasambiLight, CasambiNetworkGroup):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on all units in the group."""
+        await self._api.ensure_connected()
         was_set = False
         if ATTR_BRIGHTNESS in kwargs:
             await self._api.casa.setLevel(self._obj, kwargs[ATTR_BRIGHTNESS])

@@ -93,16 +93,19 @@ class CasambiCover(CasambiUnitEntity, CoverEntity):
 
     async def async_open_cover(self, **kwargs) -> None:
         """Open the cover (dimmer=0 in Winsol convention)."""
+        await self._api.ensure_connected()
         unit = cast("Unit", self._obj)
         await self._api.casa.setLevel(unit, 0)
 
     async def async_close_cover(self, **kwargs) -> None:
         """Close the cover (dimmer=255 in Winsol convention)."""
+        await self._api.ensure_connected()
         unit = cast("Unit", self._obj)
         await self._api.casa.setLevel(unit, 255)
 
     async def async_set_cover_position(self, **kwargs) -> None:
         """Move the cover to a specific position (0=closed, 100=open)."""
+        await self._api.ensure_connected()
         unit = cast("Unit", self._obj)
         position = kwargs[ATTR_POSITION]
         # Invert: HA 100%=open → Winsol dimmer=0; HA 0%=closed → Winsol dimmer=255

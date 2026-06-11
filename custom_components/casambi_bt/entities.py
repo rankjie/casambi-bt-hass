@@ -44,7 +44,7 @@ class CasambiEntity(Entity, metaclass=ABCMeta):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self._api.available
+        return self._api.assumed_available
 
     @callback
     def _change_callback(self, _unit: CasambiUnit) -> None:

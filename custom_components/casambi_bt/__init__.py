@@ -22,6 +22,7 @@ from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
     ConfigEntryError,
     ConfigEntryNotReady,
+    HomeAssistantError,
 )
 from homeassistant.helpers.httpx_client import get_async_client
 
@@ -588,6 +589,17 @@ class CasambiApi:
         return self.casa.connected
 
     @property
+    def reconnecting(self) -> bool:
+        """Return True if a reconnect loop is active."""
+        task = self._reconnect_task
+        return task is not None and not task.done()
+
+    @property
+    def assumed_available(self) -> bool:
+        """Return True if the fixed in-home network is connected or retrying."""
+        return self.available or self.reconnecting
+
+    @property
     def protocol_version(self) -> int | None:
         """Return the cloud protocolVersion for the network if available."""
         raw = getattr(self.casa, "rawNetworkData", None) or {}
@@ -764,6 +776,35 @@ class CasambiApi:
             return self.casa.connected
         finally:
             self._reconnect_lock.release()
+
+    async def ensure_connected(self) -> None:
+        """Connect immediately before sending a command, or fail loudly."""
+        if self.casa.connected:
+            return
+
+        task = self._reconnect_task
+        if self._reconnect_lock.locked() and task is not None and not task.done():
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(asyncio.shield(task), timeout=10)
+            if self.casa.connected:
+                return
+
+        self._schedule_reconnect("on-demand command")
+        try:
+            connected = await self.try_reconnect()
+        except ConfigEntryAuthFailed:
+            raise
+        except Exception as err:
+            self._schedule_reconnect("on-demand command failed")
+            raise HomeAssistantError(
+                f"Casambi network {self.address} is reconnecting; command not sent"
+            ) from err
+
+        if not connected and not self.casa.connected:
+            self._schedule_reconnect("on-demand command still disconnected")
+            raise HomeAssistantError(
+                f"Casambi network {self.address} is reconnecting; command not sent"
+            )
 
     def register_unit_updates(self, unit: Unit, c: Callable[[Unit], None]) -> None:
         """Register a callback for unit updates.
