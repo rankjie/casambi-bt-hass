@@ -118,6 +118,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "button_event_index": button_event_index,
                 "param_p": param_p,
                 "param_s": param_s,
+                # Which stream reported this action, and press duration (ButtonEvent release only)
+                "source": event.get("source"),
+                "press_duration_ms": event.get("press_duration_ms"),
+                "held": event.get("held"),
                 # NotifyInput fields (target_type=0x12), exposed by casambi-bt-revamped parser
                 "input_index": event.get("input_index"),
                 "input_code": event.get("input_code"),
