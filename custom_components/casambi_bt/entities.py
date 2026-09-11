@@ -168,7 +168,7 @@ class CasambiUnitEntity(CasambiEntity, metaclass=ABCMeta):
             model=unit.unitType.model,
             sw_version=unit.firmwareVersion,
             identifiers={(DOMAIN, unit.uuid)},
-            via_device=(DOMAIN, self._api.casa.networkId),
+            via_device_id=self._api.network_device_id,
         )
 
     @property

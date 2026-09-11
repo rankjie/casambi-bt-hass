@@ -24,6 +24,7 @@ from homeassistant.exceptions import (
     ConfigEntryNotReady,
     HomeAssistantError,
 )
+from homeassistant.helpers import device_registry
 from homeassistant.helpers.httpx_client import get_async_client
 
 from .const import DOMAIN, PLATFORMS
@@ -148,6 +149,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if hasattr(api.casa, 'registerSwitchEventHandler'):
         api.register_switch_event_callback(handle_switch_event)
         _LOGGER.info("Switch event handler registered - events will fire as casambi_bt_switch_event")
+
+    # Register the parent before platforms add children, regardless of load order.
+    api.network_device_id = device_registry.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, api.casa.networkId)},
+        connections={(device_registry.CONNECTION_BLUETOOTH, api.address)},
+        name=api.casa.networkName,
+        manufacturer="Casambi",
+        model="Network",
+    ).id
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = api
 
@@ -501,6 +512,7 @@ class CasambiApi:
     ) -> None:
         """Initialize a Casambi API."""
 
+        self.network_device_id: str
         self.hass = hass
         self.conf_entry = conf_entry
         self.address = address

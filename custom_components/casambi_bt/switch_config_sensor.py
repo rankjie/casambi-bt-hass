@@ -233,7 +233,7 @@ class CasambiButtonActionSensor(SensorEntity):
             model=self._unit.unitType.model,
             model_id=f"Unit ID: {self._unit.deviceId}",
             sw_version=self._unit.firmwareVersion,
-            via_device=(DOMAIN, self._api.casa.networkId),
+            via_device_id=self._api.network_device_id,
         )
     
     @property
@@ -309,7 +309,7 @@ class CasambiSwitchRawConfigSensor(SensorEntity):
             model=self._unit.unitType.model,
             model_id=f"Unit ID: {self._unit.deviceId}",
             sw_version=self._unit.firmwareVersion,
-            via_device=(DOMAIN, self._api.casa.networkId),
+            via_device_id=self._api.network_device_id,
         )
     
     @property
@@ -375,7 +375,7 @@ class CasambiSwitchSettingsSensor(SensorEntity):
             model=self._unit.unitType.model,
             model_id=f"Unit ID: {self._unit.deviceId}",
             sw_version=self._unit.firmwareVersion,
-            via_device=(DOMAIN, self._api.casa.networkId),
+            via_device_id=self._api.network_device_id,
         )
     
     @property
