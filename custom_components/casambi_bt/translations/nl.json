@@ -12,7 +12,8 @@
             "cannot_connect": "Kon geen verbinding maken",
             "invalid_address": "The bluetooth MAC address of the network is invalid.",
             "invalid_auth": "Foutieve authenticatie",
-            "unknown": "Onverwachte fout"
+            "unknown": "Onverwachte fout",
+            "gateway_unavailable": "Het gekozen knooppunt is niet meer bereikbaar. Kies een ander knooppunt of het netwerkadres."
         },
         "step": {
             "user": {
@@ -22,6 +23,28 @@
                     "password": "Wachtwoord"
                 },
                 "title": "Configureer uw Casambi netwerk"
+            },
+            "gateway": {
+                "title": "Verbindingsknooppunt",
+                "description": "Kies een GATT-knooppunt. {network_address} gebruikt het netwerkadres; afzonderlijke knooppunten blijven na opnieuw verbinden geselecteerd. De signaalwaarden zijn een momentopname van Bluetooth-ontvangers die verbindingen ondersteunen.",
+                "data": {
+                    "gateway_address": "Verbindingsknooppunt"
+                }
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "battery_level": {
+                "name": "Batterij"
+            },
+            "thermal_status": {
+                "name": "Oververhittingsstatus",
+                "state": {
+                    "normal": "Normaal",
+                    "was_overheated": "Eerder oververhit",
+                    "overheated": "Oververhit"
+                }
             }
         }
     }

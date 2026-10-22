@@ -19,12 +19,14 @@ from homeassistant.components.bluetooth.models import BluetoothServiceInfoBleak
 from homeassistant.const import CONF_ADDRESS, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import selector
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.httpx_client import get_async_client
 
 from . import get_cache_dir
-from .const import CONF_IMPORT_GROUPS, DOMAIN
+from .const import CONF_GATEWAY_ADDRESS, CONF_IMPORT_GROUPS, DOMAIN
+from .gateway import async_get_gateways
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,7 +45,7 @@ REAUTH_SCHEMA = vol.Schema(
 )
 
 
-async def _validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, str]:
+async def _validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect.
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
@@ -51,22 +53,25 @@ async def _validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str
     client = get_async_client(hass)
     casa = Casambi(client, get_cache_dir(hass))
     bt_device = async_ble_device_from_address(
-        hass, data[CONF_ADDRESS], connectable=True
+        hass, data.get(CONF_GATEWAY_ADDRESS, data[CONF_ADDRESS]), connectable=True
     )
 
     if not bt_device:
         raise NetworkNotFoundError
 
-    await casa.invalidateCache(bt_device.address)
-    await casa.connect(bt_device, data[CONF_PASSWORD])
-
-    network_name = casa.networkName
-
-    # We need to disconnect again because otherwise setup will fail
-    await casa.disconnect()
-
-    # Return info that you want to store in the config entry.
-    return {"title": network_name, "id": data[CONF_ADDRESS]}
+    await casa.invalidateCache(data[CONF_ADDRESS])
+    await casa.connect(
+        bt_device, data[CONF_PASSWORD], networkAddress=data[CONF_ADDRESS]
+    )
+    try:
+        return {
+            "title": casa.networkName,
+            "id": data[CONF_ADDRESS],
+            "unit_names": {unit.deviceId: unit.name for unit in casa.units},
+        }
+    finally:
+        # Release the GATT connection before HA sets up the entry.
+        await casa.disconnect()
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -75,6 +80,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     discovery_info: BluetoothServiceInfoBleak | None = None
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        """Keep network validation separate from gateway selection."""
+        super().__init__()
+        self._network_data: dict[str, Any] | None = None
+        self._network_info: dict[str, Any] | None = None
 
     async def _async_create_casa_entry(
         self, title: str, id: str, data: dict[str, Any]
@@ -125,7 +136,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             discovery_info.advertisement,
         )
 
-        return self.async_show_form(step_id="user")
+        return await self.async_step_user()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -155,9 +166,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.exception("Unexpected exception")
                     errors["base"] = "unknown"
                 else:
-                    return await self._async_create_casa_entry(
-                        info["title"], info["id"], user_input
-                    )
+                    self._network_data = dict(user_input)
+                    self._network_info = info
+                    return await self.async_step_gateway()
             else:
                 errors["base"] = "invalid_address"
 
@@ -174,6 +185,90 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=self.add_suggested_values_to_schema(
                 USER_SCHEMA, suggested_input
             ),
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Change the GATT node without replacing the network identity."""
+        return await self.async_step_gateway(user_input)
+
+    async def async_step_gateway(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Show current GATT receivers and select a same-network node."""
+        entry = None
+        if self.source == config_entries.SOURCE_RECONFIGURE:
+            entry = self._get_reconfigure_entry()
+            data = entry.data
+            api = self.hass.data.get(DOMAIN, {}).get(entry.entry_id)
+            unit_names = (
+                {unit.deviceId: unit.name for unit in api.casa.units} if api else {}
+            )
+        else:
+            assert self._network_data is not None
+            assert self._network_info is not None
+            data = self._network_data
+            unit_names = self._network_info["unit_names"]
+
+        network_address = data[CONF_ADDRESS]
+        current = data.get(CONF_GATEWAY_ADDRESS, network_address)
+        gateways = async_get_gateways(self.hass, network_address)
+        reachable = {node.address for node in gateways}
+        errors = {}
+        if user_input is not None:
+            selected = user_input[CONF_GATEWAY_ADDRESS]
+            if selected not in reachable and selected not in (network_address, current):
+                errors["base"] = "gateway_unavailable"
+            elif entry is not None:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={CONF_GATEWAY_ADDRESS: selected},
+                    reload_even_if_entry_is_unchanged=False,
+                )
+            else:
+                assert self._network_info is not None
+                return await self._async_create_casa_entry(
+                    self._network_info["title"],
+                    network_address,
+                    {**data, CONF_GATEWAY_ADDRESS: selected},
+                )
+
+        options = []
+        for node in gateways:
+            name = (
+                f"#{node.unit_id} {unit_names.get(node.unit_id, '')}".strip()
+                if node.unit_id is not None
+                else node.address
+            )
+            label = f"{name} · {node.rssi} dBm · {node.scanner_name}"
+            if node.unit_id is not None:
+                label += f" · {node.address}"
+            options.append(selector.SelectOptionDict(value=node.address, label=label))
+        if network_address not in reachable:
+            options.insert(
+                0,
+                selector.SelectOptionDict(value=network_address, label=network_address),
+            )
+        if current not in reachable and current != network_address:
+            options.insert(0, selector.SelectOptionDict(value=current, label=current))
+
+        return self.async_show_form(
+            step_id="gateway",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_GATEWAY_ADDRESS, default=current
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options, mode=selector.SelectSelectorMode.DROPDOWN
+                        )
+                    ),
+                }
+            ),
+            description_placeholders={"network_address": network_address},
+            errors=errors,
+            last_step=True,
         )
 
     async def async_step_reauth(self, _entry_data: Mapping[str, Any]) -> FlowResult:
@@ -195,7 +290,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
 
             try:
-                await _validate_input(self.hass, user_input)
+                await _validate_input(self.hass, data)
             except NetworkNotFoundError:
                 errors["base"] = "cannot_connect"
             except AuthenticationError:

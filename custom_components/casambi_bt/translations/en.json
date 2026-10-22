@@ -12,7 +12,8 @@
             "cannot_connect": "Failed to connect",
             "invalid_address": "The bluetooth MAC address of the network is invalid.",
             "invalid_auth": "Invalid authentication",
-            "unknown": "Unexpected error"
+            "unknown": "Unexpected error",
+            "gateway_unavailable": "The selected node is no longer reachable. Choose another node or the network address."
         },
         "step": {
             "user": {
@@ -29,6 +30,28 @@
                     "password": "Password"
                 },
                 "title": "Please verify your network password."
+            },
+            "gateway": {
+                "title": "Connection node",
+                "description": "Choose a GATT node. {network_address} uses the network address; individual nodes stay selected after reconnects. Signal readings are a snapshot from connectable Bluetooth receivers.",
+                "data": {
+                    "gateway_address": "Connection node"
+                }
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "battery_level": {
+                "name": "Battery"
+            },
+            "thermal_status": {
+                "name": "Thermal status",
+                "state": {
+                    "normal": "Normal",
+                    "was_overheated": "Previously overheated",
+                    "overheated": "Overheated"
+                }
             }
         }
     }

@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Casambi synthetic UI fixture</title>
+<style>body{margin:0;font-family:system-ui;--primary-text-color:#212121;--secondary-text-color:#687078;--primary-background-color:#fafafa;--secondary-background-color:#edf2f5;--card-background-color:#fff;--divider-color:#dfe4e8;--primary-color:#03a9f4;--error-color:#c62828}body.dark{--primary-text-color:#e8e8e8;--secondary-text-color:#a0a8b0;--primary-background-color:#17191c;--secondary-background-color:#2b3036;--card-background-color:#202429;--divider-color:#424952}nav{position:relative;z-index:2;background:#fff3cd;color:#423100;padding:8px;font-size:12px}nav button{margin:3px}casambi-events-panel{height:calc(100dvh - 86px)!important}</style>
+<nav>Synthetic UI regression fixture — no radio, account or live network data.
+<button id="append">Add event</button><button id="update">Update HA state</button><button id="disconnect">Disconnect</button><button id="reconnect">Reconnect</button><button id="burst">Add 10,000 events</button><button id="theme">Toggle dark theme</button><button id="phone">Phone width</button><button id="desktop">Desktop width</button><output id="native-action"></output></nav>
+<casambi-events-panel></casambi-events-panel><script type="module" src="/harness.js"></script></html>

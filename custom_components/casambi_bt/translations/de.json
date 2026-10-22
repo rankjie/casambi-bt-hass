@@ -12,7 +12,8 @@
         "error": {
             "cannot_connect": "Verbindung fehlgeschlagen",
             "invalid_auth": "Anmeldung ungültig",
-            "unknown": "Unerwarteter Fehler"
+            "unknown": "Unerwarteter Fehler",
+            "gateway_unavailable": "Der ausgewählte Knoten ist nicht mehr erreichbar. Wähle einen anderen Knoten oder die Netzwerkadresse."
         },
         "step": {
             "user": {
@@ -29,6 +30,28 @@
                     "password": "Passwort"
                 },
                 "title": "Bitte bestätige dein Netzwerk Passwort."
+            },
+            "gateway": {
+                "title": "Verbindungsknoten",
+                "description": "Wähle einen GATT-Knoten. {network_address} verwendet die Netzwerkadresse; einzelne Knoten bleiben auch nach erneuter Verbindung ausgewählt. Die Signalwerte sind eine Momentaufnahme verbindungsfähiger Bluetooth-Empfänger.",
+                "data": {
+                    "gateway_address": "Verbindungsknoten"
+                }
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "battery_level": {
+                "name": "Batterie"
+            },
+            "thermal_status": {
+                "name": "Überhitzungsstatus",
+                "state": {
+                    "normal": "Normal",
+                    "was_overheated": "Zuvor überhitzt",
+                    "overheated": "Überhitzt"
+                }
             }
         }
     }

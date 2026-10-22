@@ -14,12 +14,20 @@
         "data": {
           "password": "[%key:common::config_flow::data::password%]"
         }
+      },
+      "gateway": {
+        "title": "Connection node",
+        "description": "Choose a GATT node. {network_address} uses the network address; individual nodes stay selected after reconnects. Signal readings are a snapshot from connectable Bluetooth receivers.",
+        "data": {
+          "gateway_address": "Connection node"
+        }
       }
     },
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
       "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
-      "unknown": "[%key:common::config_flow::error::unknown%]"
+      "unknown": "[%key:common::config_flow::error::unknown%]",
+      "gateway_unavailable": "The selected node is no longer reachable. Choose another node or the network address."
     },
     "abort": {
       "unknown": "[%key:common::config_flow::error::unknown%]",
@@ -28,6 +36,21 @@
       "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]",
       "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery_level": {
+        "name": "Battery"
+      },
+      "thermal_status": {
+        "name": "Thermal status",
+        "state": {
+          "normal": "Normal",
+          "was_overheated": "Previously overheated",
+          "overheated": "Overheated"
+        }
+      }
     }
   }
 }

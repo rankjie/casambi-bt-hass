@@ -9,3 +9,4 @@ DOMAIN: Final = "casambi_bt"
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.COVER, Platform.LIGHT, Platform.SCENE, Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
 
 CONF_IMPORT_GROUPS: Final = "import_groups"
+CONF_GATEWAY_ADDRESS: Final = "gateway_address"

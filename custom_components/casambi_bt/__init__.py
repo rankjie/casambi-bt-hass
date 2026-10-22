@@ -9,14 +9,14 @@ import json
 import logging
 from pathlib import Path
 from typing import Final
-import yaml
 
 from CasambiBt import Casambi, Group, Scene, Unit, UnitControlType
 from CasambiBt.errors import AuthenticationError, BluetoothError, NetworkNotFoundError
+import yaml
 
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_ADDRESS, CONF_PASSWORD
+from homeassistant.const import CONF_ADDRESS, CONF_PASSWORD, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
@@ -26,11 +26,33 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers import device_registry
 from homeassistant.helpers.httpx_client import get_async_client
+from homeassistant.loader import async_get_integration
 
-from .const import DOMAIN, PLATFORMS
+from . import frontend, http, websocket_api
+from .const import CONF_GATEWAY_ADDRESS, DOMAIN, PLATFORMS
+from .network_events import DATA_NETWORK_EVENTS, NetworkEventsManager
 
 _LOGGER: Final = logging.getLogger(__name__)
 RECONNECT_BACKOFF_SECONDS: Final[tuple[int, ...]] = (3, 5, 10)
+
+
+async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
+    """Initialize one archive and panel independently of individual BLE entries."""
+    manager = NetworkEventsManager(
+        Path(hass.config.config_dir) / ".storage" / "casambi_bt_events" / "events.sqlite3"
+    )
+    await manager.start()
+    hass.data[DATA_NETWORK_EVENTS] = manager
+    websocket_api.async_register(hass)
+    http.async_register(hass)
+    integration = await async_get_integration(hass, DOMAIN)
+    await frontend.async_register(hass, integration.version)
+
+    async def close_archive(_event) -> None:
+        await manager.close()
+
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, close_archive)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -64,6 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 await existing_data.disconnect()
 
     api = CasambiApi(hass, entry, entry.data[CONF_ADDRESS], entry.data[CONF_PASSWORD])
+    await hass.data[DATA_NETWORK_EVENTS].attach(entry.entry_id, entry.title, api.address)
     await api.connect()
 
     # No buffering/dedup here; emit exactly what the library delivers.
@@ -516,10 +539,13 @@ class CasambiApi:
         self.hass = hass
         self.conf_entry = conf_entry
         self.address = address
+        self.gateway_address = conf_entry.data.get(CONF_GATEWAY_ADDRESS, address)
         self.password = password
+        self._events_manager: NetworkEventsManager = hass.data[DATA_NETWORK_EVENTS]
         self.casa: Casambi = Casambi(get_async_client(hass), get_cache_dir(hass))
 
         self._callback_map: dict[int, list[Callable[[Unit], None]]] = {}
+        self.unit_diagnostic_values: dict[tuple[int, str, int], int] = {}
         self._switch_event_callbacks: list[Callable[[dict], None]] = []
         self._cancel_bluetooth_callback: Callable[[], None] | None = None
         self._reconnect_lock = asyncio.Lock()
@@ -529,7 +555,7 @@ class CasambiApi:
         self._cancel_bluetooth_callback = bluetooth.async_register_callback(
             self.hass,
             self._bluetooth_callback,
-            {"address": self.address, "connectable": True},
+            {"address": self.gateway_address, "connectable": True},
             bluetooth.BluetoothScanningMode.ACTIVE,
         )
 
@@ -537,31 +563,38 @@ class CasambiApi:
         """Connect to the Casmabi network."""
         try:
             device = bluetooth.async_ble_device_from_address(
-                self.hass, self.address, connectable=True
+                self.hass, self.gateway_address, connectable=True
             )
             if not device:
                 raise NetworkNotFoundError  # noqa: TRY301
 
             self._register_casambi_callbacks()
+            self._events_manager.start_session(self.conf_entry.entry_id, self.gateway_address)
 
-            await self.casa.connect(device, self.password)
+            await self.casa.connect(device, self.password, networkAddress=self.address)
+            self._events_manager.set_state(self.conf_entry.entry_id, "connected")
             _LOGGER.info(
-                "[CASAMBI_HA_NETWORK] address=%s protocolVersion=%s is_classic=%s",
+                "[CASAMBI_HA_NETWORK] address=%s gateway=%s protocolVersion=%s is_classic=%s",
                 self.address,
+                self.gateway_address,
                 self.protocol_version,
                 self.is_classic_network,
             )
         except BluetoothError as err:
+            self._events_manager.set_state(self.conf_entry.entry_id, "failed")
             raise ConfigEntryNotReady("Failed to use bluetooth") from err
         except NetworkNotFoundError as err:
+            self._events_manager.set_state(self.conf_entry.entry_id, "disconnected")
             raise ConfigEntryNotReady(
-                f"Network with address {self.address} wasn't found"
+                f"Gateway {self.gateway_address} for network {self.address} wasn't found"
             ) from err
         except AuthenticationError as err:
+            self._events_manager.set_state(self.conf_entry.entry_id, "failed")
             raise ConfigEntryAuthFailed(
                 f"Failed to authenticate to network {self.address}"
             ) from err
         except Exception as err:  # pylint: disable=broad-except
+            self._events_manager.set_state(self.conf_entry.entry_id, "failed")
             # Treat as transient (e.g. BLE exchangeKey race at HA startup).
             # ConfigEntryNotReady causes HA to retry automatically; do NOT use
             # ConfigEntryError here or the user must reload manually every time.
@@ -598,6 +631,15 @@ class CasambiApi:
                 "Switch event handler not available in casambi-bt library. "
                 "Please update to latest version."
             )
+
+        if hasattr(self.casa, "registerNetworkEventHandler"):
+            with contextlib.suppress(ValueError):
+                self.casa.unregisterNetworkEventHandler(self._network_event_handler)
+            self.casa.registerNetworkEventHandler(self._network_event_handler)
+
+        with contextlib.suppress(ValueError):
+            self.casa.unregisterReceiveDiagnosticHandler(self._receive_diagnostic_handler)
+        self.casa.registerReceiveDiagnosticHandler(self._receive_diagnostic_handler)
 
     @property
     def available(self) -> bool:
@@ -656,6 +698,7 @@ class CasambiApi:
 
     async def disconnect(self) -> None:
         """Disconnects from the controller and disables automatic reconnect."""
+        self._events_manager.set_state(self.conf_entry.entry_id, "unloaded")
         await self._cancel_reconnect_task()
 
         async with self._reconnect_lock:
@@ -680,6 +723,13 @@ class CasambiApi:
                 with contextlib.suppress(ValueError):
                     self.casa.unregisterSwitchEventHandler(self._switch_event_handler)
 
+            if hasattr(self.casa, "unregisterNetworkEventHandler"):
+                with contextlib.suppress(ValueError):
+                    self.casa.unregisterNetworkEventHandler(self._network_event_handler)
+
+            with contextlib.suppress(ValueError):
+                self.casa.unregisterReceiveDiagnosticHandler(self._receive_diagnostic_handler)
+
     async def _cancel_reconnect_task(self) -> None:
         """Cancel the background reconnect loop during unload/reload."""
         task = self._reconnect_task
@@ -696,6 +746,7 @@ class CasambiApi:
 
     @callback
     def _casa_disconnect(self) -> None:
+        self._events_manager.set_state(self.conf_entry.entry_id, "disconnected")
         self._schedule_reconnect("disconnect callback")
 
     def _schedule_reconnect(self, reason: str) -> None:
@@ -728,13 +779,13 @@ class CasambiApi:
                     return
 
                 device = bluetooth.async_ble_device_from_address(
-                    self.hass, self.address, connectable=True
+                    self.hass, self.gateway_address, connectable=True
                 )
                 if device is None:
                     failures += 1
                     _LOGGER.debug(
                         "Skipping Casambi reconnect. HA reports %s not present.",
-                        self.address,
+                        self.gateway_address,
                     )
                     continue
 
@@ -844,6 +895,33 @@ class CasambiApi:
             return
         for c in self._callback_map[unit.deviceId]:
             c(unit)
+
+    @callback
+    def _network_event_handler(self, event_data: dict) -> None:
+        """Expose profile changes and input notifications to HA's event stream."""
+        kind = event_data["type"]
+        if kind in ("battery", "overheat") and event_data["source"] == "unit_state":
+            raw = event_data["raw_value"]
+            if type(raw) is not int or raw < 0:
+                raise ValueError("Invalid Casambi diagnostic wire value")
+            self.unit_diagnostic_values[
+                (event_data["unit"], kind, event_data["control_index"])
+            ] = raw
+            if kind == "overheat" and raw not in (0, 1, 2):
+                _LOGGER.warning(
+                    "Unrecognized thermal status %s for Unit %s, control %s",
+                    raw, event_data["unit"], event_data["control_index"],
+                )
+        self._events_manager.event(self.conf_entry.entry_id, event_data)
+        self.hass.bus.async_fire(
+            f"{DOMAIN}_network_event",
+            {**event_data, "entry_id": self.conf_entry.entry_id},
+        )
+
+    @callback
+    def _receive_diagnostic_handler(self, diagnostic: dict) -> None:
+        """Forward safe receive metadata without duplicating the BLE connection."""
+        self._events_manager.diagnostic(self.conf_entry.entry_id, diagnostic)
 
     @callback
     def _switch_event_handler(self, event_data: dict) -> None:

@@ -98,11 +98,13 @@ class NetworkRegistrationTest(unittest.IsolatedAsyncioTestCase):
             )
             raise PlatformSetupReached
 
-        hass = SimpleNamespace(data={}, config_entries=SimpleNamespace(async_forward_entry_setups=forward))
+        archive = SimpleNamespace(attach=AsyncMock())
+        hass = SimpleNamespace(data={"casambi_bt_network_events": archive}, config_entries=SimpleNamespace(async_forward_entry_setups=forward))
         namespace = {
             "_LOGGER": Mock(), "DOMAIN": "casambi_bt", "CasambiApi": Mock(return_value=api),
             "CONF_ADDRESS": "address", "CONF_PASSWORD": "password",
             "device_registry": dr, "PLATFORMS": ["light", "sensor"],
+            "DATA_NETWORK_EVENTS": "casambi_bt_network_events",
         }
         exec(compile(ast.fix_missing_locations(module), str(ROOT / "__init__.py"), "exec"), namespace)
         with self.assertRaises(PlatformSetupReached):

@@ -1,0 +1,57 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "配置 Casambi 网络",
+        "data": {
+          "address": "网络蓝牙地址（Network ID）",
+          "password": "网络密码",
+          "import_groups": "导入群组"
+        }
+      },
+      "reauth_confirm": {
+        "title": "验证网络密码",
+        "data": {
+          "password": "网络密码"
+        }
+      },
+      "gateway": {
+        "title": "接入节点",
+        "description": "选择用于 GATT 连接的节点。{network_address} 使用网络地址；选择具体节点后，断线重连也会继续使用该节点。信号为打开页面时可连接蓝牙接收器的读数。",
+        "data": {
+          "gateway_address": "接入节点"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "无法连接",
+      "invalid_address": "网络蓝牙地址无效。",
+      "invalid_auth": "网络密码错误。",
+      "unknown": "发生意外错误。",
+      "gateway_unavailable": "所选节点当前已不可达，请选择其他节点或网络地址。"
+    },
+    "abort": {
+      "already_configured": "此网络已配置。",
+      "bluetooth_error": "蓝牙未正常工作。",
+      "cannot_connect": "无法连接",
+      "invalid_auth": "网络密码错误。",
+      "reauth_successful": "网络密码已更新。",
+      "unknown": "发生意外错误。"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery_level": {
+        "name": "电池电量"
+      },
+      "thermal_status": {
+        "name": "过热状态",
+        "state": {
+          "normal": "正常",
+          "was_overheated": "曾经过热",
+          "overheated": "正在过热"
+        }
+      }
+    }
+  }
+}
