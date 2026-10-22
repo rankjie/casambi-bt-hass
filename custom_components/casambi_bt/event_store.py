@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from functools import partial
 import json
 import os
 from pathlib import Path
@@ -269,10 +270,18 @@ class EventStore:
         if after is not None and before is not None:
             raise ValueError("Cannot use both replay and history cursors")
         return await self._read(
-            self._query, entry_id, filters, upper, after, before, limit
+            partial(
+                self._query,
+                entry_id,
+                filters,
+                upper=upper,
+                after=after,
+                before=before,
+                limit=limit,
+            )
         )
 
-    def _query(self, entry_id, filters, upper, after, before, limit):
+    def _query(self, entry_id, filters, *, upper, after, before, limit):
         conditions, values = self._where(entry_id, filters, upper)
         if after is not None:
             conditions.append("sequence>?")
