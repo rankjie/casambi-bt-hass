@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import cast
+from typing import Final, cast
 
 from CasambiBt import Unit, UnitControlType
 
@@ -24,14 +24,29 @@ from .entities import CasambiUnitEntity, TypedEntityDescription
 _LOGGER = logging.getLogger(__name__)
 
 
+_LIGHT_ONLY_CTRL_TYPES: Final[set[UnitControlType]] = {
+    UnitControlType.VERTICAL,
+    UnitControlType.TEMPERATURE,
+    UnitControlType.RGB,
+    UnitControlType.WHITE,
+    UnitControlType.XY,
+}
+
+
 def _is_cover_unit(unit: Unit) -> bool:
     """Return True if the unit should be treated as a cover (blind/shutter).
 
     Cover units are identified by having an EXT/ mode (externally controlled
-    actuator) combined with a DIMMER control (position feedback).
+    actuator) combined with a DIMMER control (position feedback). Lights such
+    as Occhio air fixtures also use EXT/ modes, so units with light-only
+    controls (up/down distribution, color temperature, color) are excluded.
     """
     controls = {c.type for c in unit.unitType.controls}
-    return unit.unitType.mode.startswith("EXT/") and UnitControlType.DIMMER in controls
+    return (
+        unit.unitType.mode.startswith("EXT/")
+        and UnitControlType.DIMMER in controls
+        and not controls & _LIGHT_ONLY_CTRL_TYPES
+    )
 
 
 async def async_setup_entry(
