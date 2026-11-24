@@ -29,6 +29,23 @@ An enhanced fork of the [original Casambi Bluetooth integration](https://github.
 1. Copy the `custom_components/casambi_bt` folder to your `config/custom_components/`
 2. Restart Home Assistant
 
+#### Switching from the original integration
+
+Both integrations use the `casambi_bt` folder, so HACS installs this fork only
+after the original is uninstalled, and the original can only be uninstalled
+once its network is removed. Your entities survive the switch:
+
+1. Make sure you know the network password from the Casambi app.
+2. Settings → Devices & Services → Casambi Bluetooth: delete the network.
+3. HACS: uninstall `lkempf/casambi-bt-hass`.
+4. HACS: install this repository and restart Home Assistant.
+5. Add the network again ([Configuration](#configuration)) with the same password.
+
+Add it again within 30 days: Home Assistant keeps deleted entities and devices
+that long and restores their entity IDs, names, areas and labels when they come
+back, so automations, dashboards and history keep working. The cached network in
+`config/.storage/casambi_bt/` is not deleted by these steps.
+
 ### Configuration
 1. Go to Settings → Devices & Services → Add Integration
 2. Search for "Casambi Bluetooth"
