@@ -56,6 +56,25 @@ The integration requires Home Assistant 2026.9 or newer and
 `Casambi.connect(..., networkAddress=...)`. Install the matching library and
 integration builds together.
 
+### Offline start and backup files
+
+The network starts from its cached configuration, so restarts work without the
+Casambi cloud. With a password the cloud is checked in the background at startup
+and every 24 hours; changes made in the Casambi app (added or removed units)
+reload the entry. A rejected password starts reauthentication while the network
+keeps running.
+
+To move to a new Home Assistant:
+
+1. Open the Casambi panel, choose the network and click **Download backup**.
+2. On the new installation: Settings → Devices & Services → Add Integration →
+   Casambi Bluetooth → **Backup file**, and upload the file.
+
+The entry is created from the file without the cloud and without a Bluetooth
+check; it connects as soon as Home Assistant sees the network. The file holds the
+network keys and password, so store it like a password. An entry whose password
+is empty never contacts the cloud.
+
 ## Features
 
 ### Battery and thermal diagnostics

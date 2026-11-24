@@ -13,16 +13,31 @@
             "invalid_address": "The bluetooth MAC address of the network is invalid.",
             "invalid_auth": "Foutieve authenticatie",
             "unknown": "Onverwachte fout",
-            "gateway_unavailable": "Het gekozen knooppunt is niet meer bereikbaar. Kies een ander knooppunt of het netwerkadres."
+            "gateway_unavailable": "Het gekozen knooppunt is niet meer bereikbaar. Kies een ander knooppunt of het netwerkadres.",
+            "invalid_backup": "Dit bestand is geen Casambi Bluetooth-back-up.",
+            "cloud_unavailable": "De Casambi-cloud is niet bereikbaar en het netwerk staat niet in de cache."
         },
         "step": {
             "user": {
+                "title": "Casambi-netwerk toevoegen",
+                "menu_options": {
+                    "cloud": "Casambi-cloud",
+                    "backup": "Back-upbestand"
+                }
+            },
+            "cloud": {
                 "data": {
                     "address": "Adres (Casambi NetworkID)",
                     "import_groups": "Importeer groupen?",
                     "password": "Wachtwoord"
                 },
                 "title": "Configureer uw Casambi netwerk"
+            },
+            "backup": {
+                "title": "Herstellen vanuit een back-upbestand",
+                "data": {
+                    "backup": "Back-upbestand"
+                }
             },
             "gateway": {
                 "title": "Verbindingsknooppunt",

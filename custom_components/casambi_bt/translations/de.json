@@ -13,10 +13,19 @@
             "cannot_connect": "Verbindung fehlgeschlagen",
             "invalid_auth": "Anmeldung ungültig",
             "unknown": "Unerwarteter Fehler",
-            "gateway_unavailable": "Der ausgewählte Knoten ist nicht mehr erreichbar. Wähle einen anderen Knoten oder die Netzwerkadresse."
+            "gateway_unavailable": "Der ausgewählte Knoten ist nicht mehr erreichbar. Wähle einen anderen Knoten oder die Netzwerkadresse.",
+            "invalid_backup": "Diese Datei ist keine Casambi-Bluetooth-Sicherung.",
+            "cloud_unavailable": "Die Casambi-Cloud ist nicht erreichbar und das Netzwerk ist nicht zwischengespeichert."
         },
         "step": {
             "user": {
+                "title": "Casambi-Netzwerk hinzufügen",
+                "menu_options": {
+                    "cloud": "Casambi-Cloud",
+                    "backup": "Sicherungsdatei"
+                }
+            },
+            "cloud": {
                 "data": {
                     "address": "Bluetooth MAC Adresse",
                     "import_groups": "Gruppen importieren",
@@ -24,6 +33,12 @@
                 },
                 "title": "Casambi Netzwerk einrichten",
                 "description": "Die Bluetooth MAC Adresse (Netzwerk ID) findest du in den Details deiner Lampen in der Casambi App."
+            },
+            "backup": {
+                "title": "Aus einer Sicherungsdatei wiederherstellen",
+                "data": {
+                    "backup": "Sicherungsdatei"
+                }
             },
             "reauth_confirm": {
                 "data": {

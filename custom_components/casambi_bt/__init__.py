@@ -5,13 +5,21 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Iterable
 import contextlib
+from datetime import datetime
 import json
 import logging
 from pathlib import Path
 from typing import Final
 
 from CasambiBt import Casambi, Group, Scene, Unit, UnitControlType
-from CasambiBt.errors import AuthenticationError, BluetoothError, NetworkNotFoundError
+from CasambiBt.errors import (
+    AuthenticationError,
+    BluetoothError,
+    CloudUnavailableError,
+    ConnectionStateError,
+    NetworkNotFoundError,
+    NetworkOnlineUpdateNeededError,
+)
 import yaml
 
 from homeassistant.components import bluetooth
@@ -25,15 +33,24 @@ from homeassistant.exceptions import (
     HomeAssistantError,
 )
 from homeassistant.helpers import device_registry
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.loader import async_get_integration
 
 from . import frontend, http, websocket_api
-from .const import CONF_GATEWAY_ADDRESS, DOMAIN, PLATFORMS
+from .const import CONF_GATEWAY_ADDRESS, DOMAIN, NETWORK_REFRESH_INTERVAL, PLATFORMS
 from .network_events import DATA_NETWORK_EVENTS, NetworkEventsManager
 
 _LOGGER: Final = logging.getLogger(__name__)
 RECONNECT_BACKOFF_SECONDS: Final[tuple[int, ...]] = (3, 5, 10)
+# 401 rejects the password, 410 revokes the session after a password change.
+# Every other cloud failure says nothing about the stored password.
+CREDENTIALS_REJECTED_STATUSES: Final = frozenset({401, 410})
+
+
+def credentials_rejected(err: AuthenticationError) -> bool:
+    """Return True if the cloud rejected the stored password."""
+    return err.status_code in CREDENTIALS_REJECTED_STATUSES
 
 
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
@@ -190,12 +207,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register services
     await async_setup_services(hass)
 
+    if not api.offline:
+        # The network started from its cached configuration. The cloud is only
+        # needed to pick up changes made in the Casambi app.
+        entry.async_create_background_task(
+            hass, api.async_refresh_network(), "casambi_bt network refresh"
+        )
+        entry.async_on_unload(
+            async_track_time_interval(
+                hass,
+                api.async_refresh_network,
+                NETWORK_REFRESH_INTERVAL,
+                name="casambi_bt network refresh",
+            )
+        )
+
     return True
 
 
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Set up services for the Casambi integration."""
-    
     # Register get_network_config service if not already registered
     if not hass.services.has_service(DOMAIN, "get_network_config"):
         async def handle_get_network_config(call: ServiceCall) -> dict:
@@ -541,6 +572,10 @@ class CasambiApi:
         self.address = address
         self.gateway_address = conf_entry.data.get(CONF_GATEWAY_ADDRESS, address)
         self.password = password
+        # Entries restored from an offline backup without a password never
+        # contact the Casambi cloud.
+        self.offline = not password
+        self._refreshing = False
         self._events_manager: NetworkEventsManager = hass.data[DATA_NETWORK_EVENTS]
         self.casa: Casambi = Casambi(get_async_client(hass), get_cache_dir(hass))
 
@@ -559,6 +594,48 @@ class CasambiApi:
             bluetooth.BluetoothScanningMode.ACTIVE,
         )
 
+    async def async_refresh_network(self, _now: datetime | None = None) -> None:
+        """Check the Casambi cloud for a changed network configuration.
+
+        A newer configuration is cached and applied by reloading the entry, which
+        adds new units and removes deleted ones. Without the cloud the cached
+        configuration simply stays in use.
+        """
+        if self.offline or self._refreshing:
+            return
+        self._refreshing = True
+        try:
+            changed = await self.casa.refreshNetwork(self.password)
+        except AuthenticationError as err:
+            if not credentials_rejected(err):
+                raise
+            # The network keeps running from the cache meanwhile.
+            _LOGGER.warning(
+                "The Casambi cloud rejected the password of network %s", self.address
+            )
+            self.conf_entry.async_start_reauth(self.hass)
+            return
+        except CloudUnavailableError as err:
+            _LOGGER.info(
+                "Casambi cloud unavailable (%s), keeping the cached configuration of %s",
+                err,
+                self.address,
+            )
+            return
+        except ConnectionStateError:
+            # A reconnect dropped the loaded network; the next interval retries.
+            _LOGGER.debug("Network %s not loaded, skipping refresh", self.address)
+            return
+        finally:
+            self._refreshing = False
+
+        if changed:
+            _LOGGER.info(
+                "The configuration of Casambi network %s changed, reloading",
+                self.address,
+            )
+            self.hass.config_entries.async_schedule_reload(self.conf_entry.entry_id)
+
     async def connect(self) -> None:
         """Connect to the Casmabi network."""
         try:
@@ -571,7 +648,15 @@ class CasambiApi:
             self._register_casambi_callbacks()
             self._events_manager.start_session(self.conf_entry.entry_id, self.gateway_address)
 
-            await self.casa.connect(device, self.password, networkAddress=self.address)
+            await self.casa.connect(
+                device,
+                self.password,
+                forceOffline=self.offline,
+                networkAddress=self.address,
+                # Start from the cached configuration; async_refresh_network
+                # checks the cloud for changes in the background.
+                preferCache=True,
+            )
             self._events_manager.set_state(self.conf_entry.entry_id, "connected")
             _LOGGER.info(
                 "[CASAMBI_HA_NETWORK] address=%s gateway=%s protocolVersion=%s is_classic=%s",
@@ -590,8 +675,24 @@ class CasambiApi:
             ) from err
         except AuthenticationError as err:
             self._events_manager.set_state(self.conf_entry.entry_id, "failed")
-            raise ConfigEntryAuthFailed(
-                f"Failed to authenticate to network {self.address}"
+            if credentials_rejected(err):
+                raise ConfigEntryAuthFailed(
+                    f"Failed to authenticate to network {self.address}"
+                ) from err
+            raise ConfigEntryNotReady(
+                f"Casambi cloud login for {self.address} failed ({err})"
+            ) from err
+        except NetworkOnlineUpdateNeededError as err:
+            self._events_manager.set_state(self.conf_entry.entry_id, "failed")
+            if self.offline:
+                # Nothing cached and the cloud must not be used: retrying can't
+                # help, only restoring an offline backup does.
+                raise ConfigEntryError(
+                    f"No cached configuration for {self.address}. Add the network "
+                    "again from an offline backup."
+                ) from err
+            raise ConfigEntryNotReady(
+                f"Casambi cloud unavailable and {self.address} isn't cached"
             ) from err
         except Exception as err:  # pylint: disable=broad-except
             self._events_manager.set_state(self.conf_entry.entry_id, "failed")

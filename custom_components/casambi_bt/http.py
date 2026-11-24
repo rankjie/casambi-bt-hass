@@ -3,6 +3,7 @@
 import json
 
 from aiohttp import web
+from CasambiBt.errors import CasambiBtError
 import probatio as vol
 
 from homeassistant.components.http import HomeAssistantView, require_admin
@@ -10,9 +11,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.http import KEY_HASS
 
+from .backup import async_create_backup
+from .const import DOMAIN
 from .event_store import SCHEMA_VERSION
 from .network_events import DATA_NETWORK_EVENTS
 from .websocket_api import FILTER_SCHEMA, validate_cursor, validate_entry
+
+BACKUP_SCHEMA = vol.Schema({vol.Required("entry_id"): str})
 
 EXPORT_SCHEMA = vol.Schema(
     {
@@ -87,6 +92,38 @@ class EventExportView(HomeAssistantView):
         return response
 
 
+class BackupView(HomeAssistantView):
+    """Download the backup file that sets a network up on a fresh HA."""
+
+    url = "/api/casambi_bt/backup"
+    name = "api:casambi_bt:backup"
+    requires_auth = True
+
+    @require_admin
+    async def post(self, request: web.Request) -> web.Response:
+        """Return the backup of a loaded network; it holds the network keys."""
+        try:
+            entry_id = BACKUP_SCHEMA(await request.json())["entry_id"]
+        except (vol.Invalid, ValueError) as error:
+            raise web.HTTPBadRequest(text="Invalid backup request") from error
+        api = request.app[KEY_HASS].data.get(DOMAIN, {}).get(entry_id)
+        if api is None:
+            raise web.HTTPBadRequest(text="The network isn't loaded")
+        try:
+            backup = await async_create_backup(api)
+        except CasambiBtError as error:
+            raise web.HTTPConflict(text=str(error)) from error
+        return web.Response(
+            text=json.dumps(backup, ensure_ascii=False, indent=2),
+            content_type="application/json",
+            headers={
+                "Content-Disposition": 'attachment; filename="casambi-backup.json"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+
 def async_register(hass: HomeAssistant) -> None:
-    """Register the authenticated export endpoint once."""
+    """Register the authenticated export endpoints once."""
     hass.http.register_view(EventExportView())
+    hass.http.register_view(BackupView())

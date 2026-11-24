@@ -13,10 +13,19 @@
             "invalid_address": "The bluetooth MAC address of the network is invalid.",
             "invalid_auth": "Invalid authentication",
             "unknown": "Unexpected error",
-            "gateway_unavailable": "The selected node is no longer reachable. Choose another node or the network address."
+            "gateway_unavailable": "The selected node is no longer reachable. Choose another node or the network address.",
+            "invalid_backup": "This file isn't a Casambi Bluetooth backup.",
+            "cloud_unavailable": "The Casambi cloud can't be reached and the network isn't cached."
         },
         "step": {
             "user": {
+                "title": "Add a Casambi network",
+                "menu_options": {
+                    "cloud": "Casambi cloud",
+                    "backup": "Backup file"
+                }
+            },
+            "cloud": {
                 "data": {
                     "address": "Bluetooth MAC address",
                     "import_groups": "Import groups",
@@ -24,6 +33,12 @@
                 },
                 "title": "Configure your Casambi network",
                 "description": "Find the bluetooth MAC address (Network ID) in the luminair details of your casambi app."
+            },
+            "backup": {
+                "title": "Restore from a backup file",
+                "data": {
+                    "backup": "Backup file"
+                }
             },
             "reauth_confirm": {
                 "data": {

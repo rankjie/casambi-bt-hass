@@ -75,7 +75,7 @@ class CasambiEventsPanel extends HTMLElement {
   _mount() {
     if (!this.$("shell")) {
       this.shadowRoot.innerHTML = `<style>${CSS}</style><main class="shell" id="shell">
-        <header><button class="menu" id="menu" aria-label="${this.s.menu}">☰</button><h1>${this.s.title}</h1><select id="network" aria-label="${this.s.network}"></select><div class="actions"><button id="pause">${this.s.pause}</button><button id="export">${this.s.export}</button></div></header>
+        <header><button class="menu" id="menu" aria-label="${this.s.menu}">☰</button><h1>${this.s.title}</h1><select id="network" aria-label="${this.s.network}"></select><div class="actions"><button id="pause">${this.s.pause}</button><button id="export">${this.s.export}</button><button id="backup">${this.s.backup}</button></div></header>
         <div id="status" role="status"></div><div id="error" role="alert" hidden><span id="error-text"></span><button id="retry">${this.s.retry}</button></div><div id="gap" hidden>${this.s.gap}</div>
         <div class="filters"><input id="search" type="search" placeholder="${this.s.search}" aria-label="${this.s.search}"><button id="filter-toggle" aria-expanded="false">${this.s.filters}</button><select id="device" aria-label="${this.s.device}"></select><select id="type" aria-label="${this.s.type}"></select><select id="source" aria-label="${this.s.source}"><option value="">${this.s.source}</option><option value="unit_state">${this.s.stateSource}</option><option value="button_event">ButtonEvent</option><option value="notify_input">NotifyInput</option><option value="invocation">${this.s.protocolSource}</option></select><button id="reset">${this.s.reset}</button></div>
         <div class="range"><label>${this.s.from}<input id="from" type="datetime-local"></label><label>${this.s.to}<input id="to" type="datetime-local"></label><span id="timezone"></span></div>
@@ -103,6 +103,7 @@ class CasambiEventsPanel extends HTMLElement {
         catch { this._showError("clipboard_failed"); }
       };
       this.$("export").onclick = () => this._export();
+      this.$("backup").onclick = () => this._backup();
       this.$("shell").addEventListener("keydown", event => {
         if (event.key === "Escape") this._closeDetails();
         if (event.key === "/" && !["INPUT","SELECT","TEXTAREA"].includes(event.target.tagName)) { event.preventDefault(); this.$("search").focus(); }
@@ -448,6 +449,19 @@ class CasambiEventsPanel extends HTMLElement {
       setTimeout(()=>URL.revokeObjectURL(url),60000);
     } catch { this._showError("exportFailed"); }
     finally { button.disabled=false; button.textContent=this.s.export; }
+  }
+
+  async _backup() {
+    const button=this.$("backup"); button.disabled=true; button.textContent=this.s.backupBusy;
+    try {
+      const response=await this._hass.callApiRaw("POST","casambi_bt/backup",{entry_id:this.model.entryId});
+      if (!response.ok) throw new Error("backup_http_failed");
+      const blob=await response.blob();
+      const name=(this.$("network").selectedOptions[0]?.text||"network").replace(/[^\p{L}\p{N}]+/gu,"-").replace(/^-|-$/g,"");
+      const url=URL.createObjectURL(blob),link=document.createElement("a"); link.href=url; link.download=`casambi-${name}-backup.json`; link.click();
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    } catch { this._showError("backupFailed"); }
+    finally { button.disabled=false; button.textContent=this.s.backup; }
   }
 }
 

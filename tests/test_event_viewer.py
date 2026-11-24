@@ -615,6 +615,7 @@ async def test_full_entry_reload_keeps_archive_identity_and_one_gatt_client(
         )
         casa.connect = AsyncMock()
         casa.disconnect = AsyncMock()
+        casa.refreshNetwork = AsyncMock(return_value=False)
         instances.append(casa)
         return casa
 

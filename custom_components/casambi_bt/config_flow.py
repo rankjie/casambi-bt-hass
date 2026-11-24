@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import json
 import logging
 from typing import Any
 
 from CasambiBt import Casambi
-from CasambiBt.errors import AuthenticationError, NetworkNotFoundError
+from CasambiBt.errors import (
+    AuthenticationError,
+    CloudUnavailableError,
+    NetworkNotFoundError,
+    NetworkOnlineUpdateNeededError,
+    OfflineBackupError,
+)
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -16,6 +23,7 @@ from homeassistant.components.bluetooth import (
     async_scanner_count,
 )
 from homeassistant.components.bluetooth.models import BluetoothServiceInfoBleak
+from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.const import CONF_ADDRESS, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
@@ -24,8 +32,9 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.httpx_client import get_async_client
 
-from . import get_cache_dir
-from .const import CONF_GATEWAY_ADDRESS, CONF_IMPORT_GROUPS, DOMAIN
+from . import credentials_rejected, get_cache_dir
+from .backup import InvalidBackupError, async_restore_backup
+from .const import CONF_BACKUP, CONF_GATEWAY_ADDRESS, CONF_IMPORT_GROUPS, DOMAIN
 from .gateway import async_get_gateways
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,6 +52,32 @@ REAUTH_SCHEMA = vol.Schema(
         vol.Required(CONF_PASSWORD): cv.string,
     }
 )
+
+BACKUP_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_BACKUP): selector.FileSelector(
+            selector.FileSelectorConfig(accept=".json,application/json")
+        ),
+    }
+)
+
+
+def _read_backup_file(hass: HomeAssistant, file_id: str) -> Any:
+    """Read an uploaded backup file; runs in the executor."""
+    with process_uploaded_file(hass, file_id) as path:
+        return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _error_key(err: Exception) -> str:
+    """Map a failed connection attempt to a form error."""
+    if isinstance(err, AuthenticationError):
+        return "invalid_auth" if credentials_rejected(err) else "cannot_connect"
+    if isinstance(err, (CloudUnavailableError, NetworkOnlineUpdateNeededError)):
+        return "cloud_unavailable"
+    if isinstance(err, NetworkNotFoundError):
+        return "cannot_connect"
+    _LOGGER.exception("Unexpected exception", exc_info=err)
+    return "unknown"
 
 
 async def _validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
@@ -141,6 +176,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
+        """Choose between the Casambi cloud and a backup file."""
+        return self.async_show_menu(step_id="user", menu_options=["cloud", "backup"])
+
+    async def async_step_cloud(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
         """Handle entry of network information and attempt to connect."""
 
         suggested_input = {}
@@ -158,13 +199,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if len(user_input[CONF_ADDRESS]) == 17:
                 try:
                     info = await _validate_input(self.hass, user_input)
-                except NetworkNotFoundError:
-                    errors["base"] = "cannot_connect"
-                except AuthenticationError:
-                    errors["base"] = "invalid_auth"
-                except Exception:  # pylint: disable=broad-except
-                    _LOGGER.exception("Unexpected exception")
-                    errors["base"] = "unknown"
+                except Exception as err:  # pylint: disable=broad-except
+                    errors["base"] = _error_key(err)
                 else:
                     self._network_data = dict(user_input)
                     self._network_info = info
@@ -173,7 +209,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_address"
 
             return self.async_show_form(
-                step_id="user",
+                step_id="cloud",
                 data_schema=self.add_suggested_values_to_schema(
                     USER_SCHEMA, user_input
                 ),
@@ -181,10 +217,43 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         return self.async_show_form(
-            step_id="user",
+            step_id="cloud",
             data_schema=self.add_suggested_values_to_schema(
                 USER_SCHEMA, suggested_input
             ),
+        )
+
+    async def async_step_backup(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Set a network up from a backup file, without the cloud or Bluetooth.
+
+        The entry connects as soon as Home Assistant sees the network.
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                backup = await self.hass.async_add_executor_job(
+                    _read_backup_file, self.hass, user_input[CONF_BACKUP]
+                )
+                title, data = await async_restore_backup(
+                    self.hass, backup, get_cache_dir(self.hass)
+                )
+            except (
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+                InvalidBackupError,
+                OfflineBackupError,
+            ) as err:
+                _LOGGER.warning("Invalid Casambi backup file: %s", err)
+                errors["base"] = "invalid_backup"
+            else:
+                return await self._async_create_casa_entry(
+                    title, data[CONF_ADDRESS], data
+                )
+
+        return self.async_show_form(
+            step_id="backup", data_schema=BACKUP_SCHEMA, errors=errors
         )
 
     async def async_step_reconfigure(
@@ -289,15 +358,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 **user_input,
             }
 
+            api = self.hass.data.get(DOMAIN, {}).get(self.entry.entry_id)
             try:
-                await _validate_input(self.hass, data)
-            except NetworkNotFoundError:
-                errors["base"] = "cannot_connect"
-            except AuthenticationError:
-                errors["base"] = "invalid_auth"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
+                if api is not None:
+                    # The running network keeps its connection and cache; the
+                    # cloud session was dropped when the password was rejected,
+                    # so this is a real login with the new password.
+                    await api.casa.refreshNetwork(data[CONF_PASSWORD])
+                else:
+                    await _validate_input(self.hass, data)
+            except Exception as err:  # pylint: disable=broad-except
+                errors["base"] = _error_key(err)
             else:
                 self.hass.config_entries.async_update_entry(
                     self.entry,

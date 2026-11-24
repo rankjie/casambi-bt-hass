@@ -2,11 +2,24 @@
   "config": {
     "step": {
       "user": {
+        "title": "添加 Casambi 网络",
+        "menu_options": {
+          "cloud": "Casambi 云端",
+          "backup": "备份文件"
+        }
+      },
+      "cloud": {
         "title": "配置 Casambi 网络",
         "data": {
           "address": "网络蓝牙地址（Network ID）",
           "password": "网络密码",
           "import_groups": "导入群组"
+        }
+      },
+      "backup": {
+        "title": "从备份文件恢复",
+        "data": {
+          "backup": "备份文件"
         }
       },
       "reauth_confirm": {
@@ -28,7 +41,9 @@
       "invalid_address": "网络蓝牙地址无效。",
       "invalid_auth": "网络密码错误。",
       "unknown": "发生意外错误。",
-      "gateway_unavailable": "所选节点当前已不可达，请选择其他节点或网络地址。"
+      "gateway_unavailable": "所选节点当前已不可达，请选择其他节点或网络地址。",
+      "invalid_backup": "该文件不是 Casambi Bluetooth 备份。",
+      "cloud_unavailable": "无法连接 Casambi 云端，且本地没有该网络的缓存。"
     },
     "abort": {
       "already_configured": "此网络已配置。",

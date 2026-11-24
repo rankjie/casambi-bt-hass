@@ -19,6 +19,7 @@
   "config_flow": true,
   "dependencies": [
     "bluetooth_adapters",
+    "file_upload",
     "panel_custom",
     "websocket_api"
   ],
@@ -26,7 +27,7 @@
   "integration_type": "hub",
   "iot_class": "local_push",
   "requirements": [
-    "casambi-bt-revamped==0.4.3"
+    "casambi-bt-revamped==0.4.4"
   ],
-  "version": "1.9.2"
+  "version": "1.10.0"
 }

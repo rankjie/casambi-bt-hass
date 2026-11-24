@@ -2,11 +2,24 @@
   "config": {
     "step": {
       "user": {
+        "title": "Add a Casambi network",
+        "menu_options": {
+          "cloud": "Casambi cloud",
+          "backup": "Backup file"
+        }
+      },
+      "cloud": {
         "title": "Configure your Casambi network",
         "data": {
           "address": "Address (Casambi NetworkID)",
           "password": "[%key:common::config_flow::data::password%]",
           "import_groups": "Import groups?"
+        }
+      },
+      "backup": {
+        "title": "Restore from a backup file",
+        "data": {
+          "backup": "Backup file"
         }
       },
       "reauth_confirm": {
@@ -27,7 +40,9 @@
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
       "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
       "unknown": "[%key:common::config_flow::error::unknown%]",
-      "gateway_unavailable": "The selected node is no longer reachable. Choose another node or the network address."
+      "gateway_unavailable": "The selected node is no longer reachable. Choose another node or the network address.",
+      "invalid_backup": "This file isn't a Casambi Bluetooth backup.",
+      "cloud_unavailable": "The Casambi cloud can't be reached and the network isn't cached."
     },
     "abort": {
       "unknown": "[%key:common::config_flow::error::unknown%]",
